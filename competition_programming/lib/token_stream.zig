@@ -1,0 +1,171 @@
+// Copyright 2024 Cheng Sheng
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/// A whitespace-separated stream of tokens from a Reader.
+pub fn TokenStream(comptime ReaderType: type) type {
+    return struct {
+        r: ReaderType,
+        gpa: DefaultGpa,
+        byte_buf: []u8 = undefined,
+        byte_cur: []u8 = undefined,
+        item_buf: []u8 = undefined,
+
+        pub const Error = ReaderType.Error;
+
+        const Self = @This();
+        const DefaultGpa = std.heap.GeneralPurposeAllocator(.{});
+
+        pub fn init(r: ReaderType) Self {
+            var s = Self{
+                .r = r,
+                .gpa = DefaultGpa{},
+            };
+            s.byte_buf = s.alloc(4096);
+            s.byte_cur = s.byte_buf[0..0];
+            s.item_buf = s.alloc(4);
+            return s;
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.free(self.item_buf);
+            self.free(self.byte_buf);
+            self.gpa.deinit() catch @panic("leak");
+        }
+
+        /// Returns the next token; null if the nothing left (EOF reached). The
+        /// returned slice's content is only valid before the next call to this
+        /// function.
+        pub fn next(self: *Self) Error!?[]u8 {
+            while (true) {
+                if (self.byte_cur.len == 0) {
+                    const len = try self.r.read(self.byte_buf);
+                    if (len == 0) return null; // EOF
+                    self.byte_cur = self.byte_buf[0..len];
+                } else if (std.ascii.isWhitespace(self.byte_cur[0])) {
+                    self.byte_cur = self.byte_cur[1..];
+                } else {
+                    return try self.getCompleteItem();
+                }
+            }
+        }
+
+        fn getCompleteItem(self: *Self) Error![]u8 {
+            var len: usize = 0;
+            while (try self.nextByte()) |byte| {
+                if (std.ascii.isWhitespace(byte)) return self.item_buf[0..len];
+                if (len == self.item_buf.len) self.doubleItemBuf();
+                self.item_buf[len] = byte;
+                len += 1;
+            }
+            return self.item_buf[0..len];
+        }
+
+        fn nextByte(self: *Self) Error!?u8 {
+            if (self.byte_cur.len == 0) {
+                const len = try self.r.read(self.byte_buf);
+                if (len == 0) return null; // EOF
+                self.byte_cur = self.byte_buf[0..len];
+            }
+            const byte = self.byte_cur[0];
+            self.byte_cur = self.byte_cur[1..];
+            return byte;
+        }
+
+        fn alloc(self: *Self, len: usize) []u8 {
+            return self.gpa.allocator().alloc(u8, len) catch @panic("alloc");
+        }
+        fn free(self: *Self, array: []u8) void {
+            self.gpa.allocator().free(array);
+        }
+        fn doubleItemBuf(self: *Self) void {
+            const len = self.item_buf.len;
+            var new_buf = self.alloc(len * 2);
+            @memcpy(new_buf[0..len], self.item_buf);
+            self.item_buf = new_buf;
+        }
+    };
+}
+
+pub fn tokenStream(reader: anytype) TokenStream(@TypeOf(reader)) {
+    return TokenStream(@TypeOf(reader)).init(reader);
+}
+
+// *********************************************************
+// *********************************************************
+// USE-BY-COPY ENDS HERE
+// *********************************************************
+// *********************************************************
+
+const std = @import("std");
+
+test "empty" {
+    var in_stream = std.io.fixedBufferStream("");
+    var stream = tokenStream(in_stream.reader());
+    try std.testing.expectEqual(null, try stream.next());
+}
+
+test "one" {
+    var in_stream = std.io.fixedBufferStream(" abc");
+    var stream = tokenStream(in_stream.reader());
+    try std.testing.expectEqualSlices(u8, "abc", (try stream.next()).?);
+    try std.testing.expectEqual(null, try stream.next());
+}
+
+test "two" {
+    var in_stream = std.io.fixedBufferStream(" abc  def ");
+    var stream = tokenStream(in_stream.reader());
+    try std.testing.expectEqualSlices(u8, "abc", (try stream.next()).?);
+    try std.testing.expectEqualSlices(u8, "def", (try stream.next()).?);
+    try std.testing.expectEqual(null, try stream.next());
+}
+
+test "two_tab" {
+    var in_stream = std.io.fixedBufferStream("\t\tabc\t\tdef\t");
+    var stream = tokenStream(in_stream.reader());
+    try std.testing.expectEqualSlices(u8, "abc", (try stream.next()).?);
+    try std.testing.expectEqualSlices(u8, "def", (try stream.next()).?);
+    try std.testing.expectEqual(null, try stream.next());
+}
+
+test "long_item" {
+    var in_stream = std.io.fixedBufferStream("abc defghijklmnopqrstuvwxyz");
+    var stream = tokenStream(in_stream.reader());
+    try std.testing.expectEqualSlices(u8, "abc", (try stream.next()).?);
+    try std.testing.expectEqualSlices(u8, "defghijklmnopqrstuvwxyz", (try stream.next()).?);
+    try std.testing.expectEqual(null, try stream.next());
+}
+
+test "really_long_item" {
+    const item = "abc" ** 16000;
+    var in_stream = std.io.fixedBufferStream("  " ++ item ++ "  " ++ item);
+    var stream = tokenStream(in_stream.reader());
+    try std.testing.expectEqualSlices(u8, item, (try stream.next()).?);
+    try std.testing.expectEqualSlices(u8, item, (try stream.next()).?);
+    try std.testing.expectEqual(null, try stream.next());
+}
+
+test "item_cross_boundary" {
+    var in_stream = std.io.fixedBufferStream((" " ** 4094) ++ "abcd" ++ (" " ** 4094));
+    var stream = tokenStream(in_stream.reader());
+    try std.testing.expectEqualSlices(u8, "abcd", (try stream.next()).?);
+    try std.testing.expectEqual(null, try stream.next());
+}
+
+test "a lot spaces" {
+    var in_stream = std.io.fixedBufferStream("abc" ++ (" " ** 16000) ++ "def");
+    var stream = tokenStream(in_stream.reader());
+    try std.testing.expectEqualSlices(u8, "abc", (try stream.next()).?);
+    try std.testing.expectEqualSlices(u8, "def", (try stream.next()).?);
+    try std.testing.expectEqual(null, try stream.next());
+}
