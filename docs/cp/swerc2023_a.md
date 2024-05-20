@@ -35,7 +35,7 @@ Then the code looks roughly like:
     }
 ```
 
-This data structure can be a [range tree](https://en.wikipedia.org/wiki/Range_tree) (though in the competition programming context, probably called [segment tree](https://www.geeksforgeeks.org/segment-tree-data-structure/), not to be confused with another [segument tree](https://en.wikipedia.org/wiki/Segment_tree) that actually indexes segments/intervals).
+This data structure can be a [range tree](https://en.wikipedia.org/wiki/Range_tree) (though in the competition programming context, probably called [segment tree](https://www.geeksforgeeks.org/segment-tree-data-structure/), not to be confused with another [segment tree](https://en.wikipedia.org/wiki/Segment_tree) that actually indexes segments/intervals).
 
 But to keep oneself as lazy as possible, using a balanced search tree provided by a language's standard library is also possible and actually preferred, with the following observation:
 * If `my_array[i] <= my_array[j]` but the computed answer for `my_array[i]` is larger than the answer for `my_array[j]`, then `my_array[j]` has no value for the future computation (the new `x` can always pick `my_array[i]` as the previous element in the sub-sequence and get better results).
@@ -318,3 +318,46 @@ When looping an array with an integer index, one can simply do `for (array, 0..)
 
 Similarly, when looping two parallel arrays, `for (array1, array2) |elem1, elem2|`.
 According to the language reference, it is forbidden to have different-length `array1` and `array2`.
+
+### C style parent-child struct field point casting
+Looking carefully, `std.Treap` has only its key as a generic type, the "value" is just `Treap.Node` with a key, priority (internal to Treap) and some other node pointers.
+There's no place to store any value at all!
+So what to do?
+
+Fortunately the author has a little C experiences to rescue here, and noticed that the nodes are actually NOT owned by the Treap, instead by the caller.
+And Treap is actually (data-wise) a thin wrapper over a bunch of nodes.
+So the idiom is probably this here:
+```zig
+const MyTreap = std.Treap(u32, std.math.order);
+const MyValueContainer = struct {
+    value: i64,
+    node: MyTreap.Node,
+};
+
+test "insert, traverse" {
+    var my_value_containers: [10]MyValueContainer = undefined;
+    var treap = MyTreap{};
+    var i: usize = 0;
+    while (i < 10) : (i += 1) {
+        var entry = treap.getEntryFor(@intCast(i));
+        entry.set(&my_value_containers[i].node);
+        my_value_containers[i].value = -@as(i64, @intCast(i)) - 10;
+    }
+    var iter = treap.inorderIterator();
+    while (iter.next()) |node| {
+        // The explicit type is mandatory for @fieldParentPtr() to do type inference.
+        const my_value_container: *MyValueContainer = @fieldParentPtr("node", node);
+        std.debug.print("Key {} Value {}\n", .{node.key, my_value_container.value});
+    }
+}
+```
+
+Very strong flavor of C here :-)
+
+And a lot of type inferences around the builtin functions (those starting with @).
+
+### A simple loop?
+This works:
+```zig
+    for (0..5) |i| std.debug.print("{}\n", .{i});
+```
