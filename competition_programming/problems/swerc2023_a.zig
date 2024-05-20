@@ -36,33 +36,18 @@ fn PermutationsHelper(comptime n: u8) type {
     };
 }
 
-fn numPermutations(comptime n: u8) usize {
+const old_perms = old_perms_block: {
+    var perms_buf: [1 << 10]u8 = undefined;
+    var perms_fba = std.heap.FixedBufferAllocator.init(&perms_buf);
+    var perms_helper = PermutationsHelper(4).init(perms_fba.allocator());
+    perms_helper.recursive(0) catch @panic("buffer too small");
+    var array: [perms_helper.ans.items.len][4]u8 = undefined;
+    @memcpy(&array, perms_helper.ans.items);
+    break :old_perms_block array;
+};
+
+fn getSuitePermutations() [old_perms.len][5]u8 {
     comptime {
-        var buf: [1 << 10]u8 = undefined;
-        var fba = std.heap.FixedBufferAllocator.init(&buf);
-        var ph = PermutationsHelper(n).init(fba.allocator());
-        ph.recursive(0) catch @panic("buffuer too small");
-
-        return ph.ans.items.len;
-    }
-}
-
-fn getPermutations(comptime n: u8) [numPermutations(n)][n]u8 {
-    comptime {
-        var buf: [1 << 10]u8 = undefined;
-        var fba = std.heap.FixedBufferAllocator.init(&buf);
-        var ph = PermutationsHelper(n).init(fba.allocator());
-        ph.recursive(0) catch @panic("buffuer too small");
-
-        var p: [numPermutations(n)][n]u8 = undefined;
-        @memcpy(&p, ph.ans.items);
-        return p;
-    }
-}
-
-fn getSuitePermutations() [numPermutations(4)][5]u8 {
-    comptime {
-        const old_perms = getPermutations(4);
         var new_perms: [old_perms.len][5]u8 = undefined;
         for (&old_perms, &new_perms) |*old_perm, *new_perm| {
             @memcpy(new_perm[0..4], old_perm);

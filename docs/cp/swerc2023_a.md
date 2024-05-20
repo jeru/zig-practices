@@ -296,3 +296,25 @@ Is there any return-type inferrence/derivation in Zig?
 
 Anyway, the compile-time computation in Zig is NOT obstacle-free comparing to its run-time computatoin (also need a special allocator).
 But it still feels easier than C++'s template-based programming.
+
+#### EDIT: Block semantic to rescue
+It's possible to avoid duplicated call with comptime block semantics, because `break :block_name value` can return a value for a block without an explicit type mentioning.
+
+With `PermutationHelper` like before:
+```zig
+const perms = perms_block: {
+    var perms_buf: [1 << 10]u8 = undefined;
+    var perms_fba = std.heap.FixedBufferAllocator.init(&perms_buf);
+    var perms_helper = PermutationsHelper(4).init(perms_fba.allocator());
+    perms_helper.recursive(0) catch @panic("buffer too small");
+    var array: [perms_helper.ans.items.len][4]u8 = undefined;
+    @memcpy(&array, perms_helper.ans.items);
+    break :perms_block array;
+};
+```
+
+### Nice parallel loop
+When looping an array with an integer index, one can simply do `for (array, 0..) |elem, i|`.
+
+Similarly, when looping two parallel arrays, `for (array1, array2) |elem1, elem2|`.
+According to the language reference, it is forbidden to have different-length `array1` and `array2`.
