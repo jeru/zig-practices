@@ -17,3 +17,7 @@ test_one() {
 for f in $(ls $test_dir/*.in); do
     test_one $(echo $f | sed 's/\.in$//')
 done
+
+echo
+echo
+echo "Congratulations! All correct."
