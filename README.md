@@ -14,6 +14,8 @@ potentially complex logic.
 
 ## How powerful is the type system?
 
-Zig supports at least some level of [Π-type (pi-type)](https://en.wikipedia.org/wiki/Dependent_type).
+Zig supports at least some level of [dependent types](https://en.wikipedia.org/wiki/Dependent_type).
 A small [example](pi_type/dummy_example.zig).
 What can we do with Zig's type system? Can we prove math theorems with it (like in Coq)?
+
+1. Attempt to define a [compile-time recursive data structure](pi_type/natural_number.zig).
