@@ -16,6 +16,7 @@ potentially complex logic.
 
 Zig supports at least some level of [dependent types](https://en.wikipedia.org/wiki/Dependent_type).
 A small [example](pi_type/dummy_example.zig).
-What can we do with Zig's type system? Can we prove math theorems with it (like in Coq)?
+What can we do with Zig's type system?
 
-1. Attempt to define a [compile-time recursive data structure](pi_type/natural_number.zig).
+1. Can we prove math theorems with it (like in Coq)? Attempt to define a [compile-time recursive data structure](pi_type/natural_number.zig). Then no idea how to express a "white-box" function (eg., for `plus()`), whose internal definition can be used for reasoning in a proof.
+1. Can we run a very complicated code-gen (like Protobuf's code-gen) directly with Zig's compile-time computation? Most of code can be covered, but not fully. Like [this](pi_type/reflection.zig).
